@@ -34,6 +34,78 @@ def get_reporting_tips(selected_types):
     matched_tips = tips_data[tips_data['category'].isin(categories)]
     return matched_tips['tips'].tolist()
 
+# Streamlit CSS Background & Heading
+page_element="""
+<style>
+[data-testid="stAppViewContainer"] {
+    background-image: url("https://images.pexels.com/photos/15265064/pexels-photo-15265064/free-photo-of-seagulls-on-the-shore.jpeg");
+    background-size: cover;
+}
+
+[data-testid="stHeader"] {
+    background-color: rgba(0,0,0,0);
+}
+
+[data-testid="stSidebar"] {
+    background-color: white;
+    text-align: center;
+}
+
+[data-testid="stSidebar"] p {
+    line-height: 1.75;
+}
+
+[data-testid="stMain"] p {
+    font-size: 1.2em;
+}
+[data-testid="stExpander"]{
+    background-color: transparent;
+}
+
+{
+    background-color: lightsteelblue;
+}
+
+[data-testid="stExpander"],
+[data-testid="stFileUploaderDropzone"],
+[data-testid="stNumberInputContainer"] div, 
+[data-testid="stNumberInputContainer"] div button, 
+.st-ay, .st-aw  {
+    background-color: lightsteelblue;
+    color: black;
+}
+
+p {
+    font-weight: bold;
+}
+
+summary:hover {
+    color: steelblue !important;
+}
+
+[data-testid="stMarkdown"] {
+    background-color: rgba(255, 255, 255, .80);
+    padding: 10px;
+    border-radius: 10px;
+}
+
+button:hover, button:focus {
+    background-color: steelblue !important;
+    border-color: white !important;
+    color: white !important;
+}
+</style>
+"""
+st.markdown(page_element, unsafe_allow_html=True)
+
+col1, col2, col3 = st.sidebar.columns([1, 1, 1])
+with col2:
+    st.sidebar.title("WELCOME!")
+    st.sidebar.image("images/aqua.PNG")
+    st.sidebar.divider()
+    st.sidebar.markdown("Aqua Alert was made to help local communities care for their waterways using an accessible and intuitive app!")
+    st.sidebar.markdown("For a demo of our app, please visit this link here: -insert link in the future-.")
+
 # Streamlit UI
 st.title("AquaAlert: Illegal Dumping Reporting Tool")
 st.subheader("🌊 Protecting Our Waterways Together")
