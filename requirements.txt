@@ -5,3 +5,4 @@ pillow
 piexif
 opencage
 google-cloud-vision
+json
