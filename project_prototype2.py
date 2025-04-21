@@ -69,8 +69,8 @@ def reverse_geocode(lat, lon):
 
 #Feature2
 # Detect waste type using Google Vision API
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "data/vision_key.json"
 
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = st.secrets["GOOGLE_APPLICATION_CREDENTIALS"]
 def detect_waste_type(image_file):
     client = vision.ImageAnnotatorClient()
     content = image_file.read()
