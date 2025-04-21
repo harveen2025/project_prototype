@@ -2,7 +2,11 @@ import streamlit as st
 import time
 import os
 import pandas as pd
+import piexif
 from openai import OpenAI
+from PIL import Image
+from opencage.geocoder import OpenCageGeocode
+from google.cloud import vision
 
 # Load datasets
 dumping_data = pd.read_csv("data/dumping_types.csv")
@@ -22,17 +26,94 @@ def get_ai_analysis(prompt, model="gpt-3.5-turbo"):
     )
     return response.choices[0].message.content
 
-# Contact local agencies based on selected dump types
-def contact_authorities(location, selected_types):
-    agencies = dumping_data[dumping_data['type'].isin(selected_types)]['disposal_agency'].unique()
-    agency_list = ", ".join(agencies)
-    return f"Local authorities and cleanup agencies contacted at **{location}**: {agency_list}."
+# Feature1
+# Extract location from image EXIF metadata
+def extract_location(image_file):
+    try:
+        img = Image.open(image_file)
+        exif_dict = piexif.load(img.info['exif'])
 
-# Get tips based on selected dump types
-def get_reporting_tips(selected_types):
-    categories = dumping_data[dumping_data['type'].isin(selected_types)]['category'].unique()
+        gps = exif_dict.get("GPS")
+        if not gps:
+            return "Unknown Location"
+
+        def convert_to_degrees(value):
+            d = value[0][0] / value[0][1]
+            m = value[1][0] / value[1][1]
+            s = value[2][0] / value[2][1]
+            return d + (m / 60.0) + (s / 3600.0)
+
+        lat = convert_to_degrees(gps[piexif.GPSIFD.GPSLatitude])
+        if gps[piexif.GPSIFD.GPSLatitudeRef] != b'N':
+            lat = -lat
+
+        lon = convert_to_degrees(gps[piexif.GPSIFD.GPSLongitude])
+        if gps[piexif.GPSIFD.GPSLongitudeRef] != b'E':
+            lon = -lon
+
+        return reverse_geocode(lat, lon)
+    except Exception as e:
+        return f"Unknown Location (Error: {e})"
+
+# Reverse geocode
+OPENCAGE_API_KEY = "d023d87ba6be4e3785be92480a92d27c"
+geocoder = OpenCageGeocode(OPENCAGE_API_KEY)
+def reverse_geocode(lat, lon):
+    try:
+        results = geocoder.reverse_geocode(lat, lon)
+        if results and len(results):
+            return results[0]['formatted']
+    except Exception as e:
+        print("Reverse geocoding failed:", e)
+    return f"{lat:.6f}, {lon:.6f}"
+
+#Feature2
+# Detect waste type using Google Vision API
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "data/vision_key.json"
+
+def detect_waste_type(image_file):
+    client = vision.ImageAnnotatorClient()
+    content = image_file.read()
+    image_file.seek(0)
+    image = vision.Image(content=content)
+
+    response = client.label_detection(image=image)
+    labels = response.label_annotations
+
+    # List of waste-related terms you're interested in
+    known_waste_types = ["plastic", "oil", "metal", "glass", "organic", "electronic", "tire", "battery"]
+
+    detected_labels = [label.description.lower() for label in labels]
+    detected_waste = [label for label in detected_labels if label in known_waste_types]
+
+    return detected_waste or ["unknown"]
+
+# Feature3
+# Contact local authorities based on detected waste types
+def contact_authorities(location, detected_types):
+    matched_agencies = set()
+
+    for dtype in detected_types:
+        for _, row in dumping_data.iterrows():
+            if dtype.lower() in row['type'].lower():
+                matched_agencies.add(row['disposal_agency'])
+
+    if matched_agencies:
+        agencies_str = ", ".join(matched_agencies)
+    else:
+        agencies_str = "No specific agencies found."
+
+    return f"Local authorities and cleanup agencies contacted at **{location}**: {agencies_str}."
+
+# Get tips based on dump categories
+def get_reporting_tips(detected_types):
+    categories = set()
+    for dtype in detected_types:
+        matches = dumping_data[dumping_data['type'].str.lower().str.contains(dtype.lower())]
+        categories.update(matches['category'].tolist())
     matched_tips = tips_data[tips_data['category'].isin(categories)]
     return matched_tips['tips'].tolist()
+
 
 # Streamlit CSS Background & Heading
 page_element="""
@@ -106,54 +187,52 @@ with col2:
     st.sidebar.markdown("Aqua Alert was made to help local communities care for their waterways using an accessible and intuitive app!")
     st.sidebar.markdown("For a demo of our app, please visit this link here: -insert link in the future-.")
 
-# Streamlit UI
+
+# --- Streamlit UI ---
 st.title("AquaAlert: Illegal Dumping Reporting Tool")
-st.subheader("🌊 Protecting Our Waterways Together")
+st.subheader("📸 Just upload a photo — we’ll take care of the rest!")
 st.markdown("AI-powered tool to report illegal dumping, contact agencies, and learn how to reduce pollution.")
 
-# Feature 2: Upload Image
-uploaded_file = st.file_uploader("📸 Upload an image of the dumping site", type=["jpg", "jpeg", "png"])
-if uploaded_file:
-    st.image(uploaded_file, caption="Uploaded Image", use_column_width=True)
+# Upload section
+uploaded_file = st.file_uploader("Upload a photo of the polluted site", type=["jpg", "jpeg", "png"])
+description = st.text_area("Optional: Add a brief description (if you'd like)", placeholder="e.g., Looks like a spill near the river...")
 
-# Feature 1: Location & Checklist for Dump Type
-location = st.text_input("📍 Enter the location of the issue")
-
-st.markdown("**✅ Select all types of dumping observed:**")
-selected_types = st.multiselect("Types of Waste", options=dumping_data["type"].tolist())
-
-issue_duration = st.number_input("🕐 Duration of the issue (days)", min_value=1, max_value=365, value=1)
-description = st.text_area("📝 Describe the situation briefly")
-
-if st.button("🚀 Analyze & Report"):
-    if uploaded_file and selected_types and location:
-        with st.spinner("Analyzing and contacting local agencies..."):
+if st.button("Report"):
+    if uploaded_file:
+        with st.spinner("Analyzing the image and contacting local agencies..."):
             time.sleep(2)
-            
-            # AI Analysis
+
+            # Step 1: Detect waste and location
+            detected_types = detect_waste_type(uploaded_file)
+            uploaded_file.seek(0)  # reset to read again
+            location = extract_location(uploaded_file)
+
+            # Step 2: Display basic info
+            st.subheader("📍 Report Summary")
+            st.markdown(f"**Location Detected:** {location}")
+            st.markdown(f"**Waste Type Detected:** {', '.join([w.title() for w in detected_types])}")
+
+            # Step 3: AI Summary
             ai_prompt = f"""
-            Analyze this illegal dumping report. The location is {location}, types of waste are {', '.join(selected_types)}, issue duration is {issue_duration} days.
-            User description: {description}.
-            What kind of pollution is it? Suggest potential mitigation actions.
+            Analyze this illegal dumping report. Location: {location}.
+            Detected waste types: {', '.join(detected_types)}.
+            Additional description: {description}.
+            What kind of pollution is this and what actions can help?
             """
             analysis_result = get_ai_analysis(ai_prompt)
 
-            # Display Results
-            st.subheader("🧠 AI Analysis:")
+            st.subheader("🌍 Pollution Incident Summary:")
             st.write(analysis_result)
 
-            st.subheader("📡 Authority Contacted:")
-            st.success(contact_authorities(location, selected_types))
+            # Step 4: Notify authorities
+            st.subheader("📡 Authorities Notified:")
+            st.success(contact_authorities(location, detected_types))
 
-            st.subheader("💡 Reporting Tips:")
-            for tip in get_reporting_tips(selected_types):
+            # Step 5: Show helpful tips
+            st.subheader("💡 Helpful Tips:")
+            for tip in get_reporting_tips(detected_types):
                 st.markdown(f"- {tip}")
 
-            st.success("✅ Thank you for your report!")
+            st.success("✅ Thanks for reporting and making a difference!")
     else:
-        st.warning("Please complete all fields and upload an image.")
-
-# Expandable for extra resources
-with st.expander("🔗 More Resources"):
-    st.link_button("EPA Waste Management", "https://www.epa.gov/smm")
-    st.link_button("UN SDG 6: Clean Water & Sanitation", "https://sdgs.un.org/goals/goal6")
+        st.warning("Please upload an image to begin.")
