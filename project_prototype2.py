@@ -3,10 +3,18 @@ import time
 import os
 import pandas as pd
 import piexif
+import json
 from openai import OpenAI
 from PIL import Image
 from opencage.geocoder import OpenCageGeocode
 from google.cloud import vision
+
+# Write the credentials to a temporary file
+with open("/tmp/vision_key.json", "w") as f:
+    f.write(st.secrets["GOOGLE_APPLICATION_CREDENTIALS"])
+
+# Set the environment variable so Google Cloud Vision can authenticate
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/tmp/vision_key.json"
 
 # Load datasets
 dumping_data = pd.read_csv("data/dumping_types.csv")
