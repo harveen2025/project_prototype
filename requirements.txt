@@ -1,0 +1,7 @@
+streamlit
+openai
+pandas
+pillow
+piexif
+opencage
+google-cloud-vision
